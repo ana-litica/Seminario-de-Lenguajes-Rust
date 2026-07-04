@@ -107,12 +107,12 @@ impl Veterinaria{
         self.cola_de_atencion.push_front(mascota);
     }
 
-    pub fn atender_mascota(&mut self,diagnostico:String,tratamiento:String,proxima_visita:Fecha)->Atencion{
+    pub fn atender_mascota(&mut self,diagnostico:String,tratamiento:String,proxima_visita:Fecha)->Option<Atencion>{
         if let Some(paciente)=self.cola_de_atencion.pop_front(){
             let atencion:Atencion=Atencion::new(paciente, diagnostico, tratamiento, proxima_visita);
-            atencion
+            Some(atencion)
         }else{
-            panic!();
+            None
         }
     }   
 
@@ -129,8 +129,8 @@ impl Veterinaria{
         encontrado
     }
 
-    pub fn registrar_atencion(&mut self,atencion:Atencion){
-        self.atenciones.push(atencion);
+    pub fn registrar_atencion(&mut self,atencion:&Atencion){
+        self.atenciones.push(atencion.clone());
     }
 
     fn verificar(&self, i:usize,nombre_mascota:String, nombre_dueño:String,telefono:u64)->bool{
@@ -139,7 +139,7 @@ impl Veterinaria{
         self.atenciones[i].paciente.dueño.telefono==telefono
     }
     
-    pub fn  buscar_atencion(&self, nombre_mascota:String, nombre_dueño:String,telefono:u64)->Atencion{
+    pub fn  buscar_atencion(&self, nombre_mascota:String, nombre_dueño:String,telefono:u64)->Option<Atencion>{
         let mut indice:usize=0;
         let mut encontrado=false;
         let mut atencion:Option<Atencion>=None;
@@ -147,42 +147,51 @@ impl Veterinaria{
             if self.verificar(indice,nombre_mascota.clone(),nombre_dueño.clone(),telefono){
                 atencion=self.atenciones.get(indice).cloned();
                 encontrado=true;
+                return atencion;
             }
             indice+=1;
         }
-        if atencion.is_some(){
-            atencion.unwrap()
-        }else{
-            panic!("No se encontró la atención");
-        }
+        None
     }
 
-    fn buscar_atencion_indice(&self,atencion:Atencion)->usize{
+    fn buscar_atencion_indice(&self,atencion:&Atencion)->Option<usize>{
         let mut indice:usize=0;
         let mut encontrado=false;
         while !encontrado && indice < self.atenciones.len(){
             if self.atenciones[indice].misma_atencion(&atencion){
-                return indice;
+                return Some(indice);
             }else{
                 indice+=1;
             }
         }
-        panic!("No se encontró la atencion");
+        None
     }
 
-    pub fn modificar_diagnostico(&mut self, diagnostico:String,atencion:Atencion){
-        let posicion:usize=self.buscar_atencion_indice(atencion);
-        self.atenciones[posicion].diagnostico=diagnostico;
+    pub fn modificar_diagnostico(&mut self, diagnostico:String,atencion:Atencion)->bool{
+        let posicion=self.buscar_atencion_indice(&atencion);
+        if posicion.is_none(){
+            return false;
+        }
+        self.atenciones[posicion.unwrap()].diagnostico=diagnostico;
+        true
     }
 
-    pub fn modificar_visita(&mut self,fecha:Fecha,atencion:Atencion){
-        let posicion:usize=self.buscar_atencion_indice(atencion);
-        self.atenciones[posicion].proxima_visita=fecha;
+    pub fn modificar_visita(&mut self,fecha:Fecha,atencion:Atencion)->bool{
+        let posicion=self.buscar_atencion_indice(&atencion);
+        if posicion.is_none(){
+            return false;
+        }
+        self.atenciones[posicion.unwrap()].proxima_visita=fecha;
+        true
     }
 
-    pub fn eliminar_atencion(&mut self, atencion:Atencion){
-        let pos:usize=self.buscar_atencion_indice(atencion);
-        self.atenciones.remove(pos);
+    pub fn eliminar_atencion(&mut self, atencion:&Atencion)->bool{
+        let pos=self.buscar_atencion_indice(&atencion);
+        if pos.is_none(){
+            return false;
+        }
+        self.atenciones.remove(pos.unwrap());
+        true
     }
 
 }
@@ -240,15 +249,16 @@ mod test{
         veterinaria.agregar_mascota(otto);
         let prox_visita=Fecha::new(03, 06, 2026);
         let atencion:Atencion=Atencion::new(perli,"Alergia".to_string(), "Medicacion de alergia".to_string(),prox_visita.clone());
-        assert!(veterinaria.atender_mascota("Alergia".to_string(), "Medicacion de alergia".to_string(), prox_visita.clone()).misma_atencion(&atencion));
+        let resultado=veterinaria.atender_mascota("Alergia".to_string(), "Medicacion de alergia".to_string(), prox_visita.clone());
+        assert!(resultado.is_some());
+        assert!(resultado.unwrap().misma_atencion(&atencion));
     }
 
     #[test]
-    #[should_panic]
     fn atender_mascota_cola_vacia_test(){
         let mut veterinaria:Veterinaria=Veterinaria::new("Hola Patitas".to_string(),"777 777".to_string(),12345);
         let prox_visita=Fecha::new(03, 06, 2026);
-        veterinaria.atender_mascota("Alergia".to_string(), "Medicacion de alergia".to_string(), prox_visita);
+        assert!(veterinaria.atender_mascota("Alergia".to_string(), "Medicacion de alergia".to_string(), prox_visita).is_none());
     }
 
     #[test]
@@ -290,8 +300,8 @@ mod test{
         veterinaria.agregar_mascota(perli.clone());
         assert_eq!(veterinaria.atenciones.len(),0);
         let prox_visita=Fecha::new(03, 06, 2026);
-        let atencion:Atencion=veterinaria.atender_mascota("Alergia".to_string(), "Medicacion de alergia".to_string(), prox_visita);
-        veterinaria.registrar_atencion(atencion);
+        let atencion:Atencion=veterinaria.atender_mascota("Alergia".to_string(), "Medicacion de alergia".to_string(), prox_visita).unwrap();
+        veterinaria.registrar_atencion(&atencion);
         assert_eq!(veterinaria.atenciones.len(),1);
     }
 
@@ -306,18 +316,19 @@ mod test{
         veterinaria.agregar_mascota(cook);
         veterinaria.agregar_mascota(otto);
         veterinaria.agregar_mascota(perli);
-        let atencion1:Atencion=veterinaria.atender_mascota("Alergia".to_string(), "Medicacion de alergia".to_string(), Fecha::new(03,06,2026));
-        let atencion2:Atencion=veterinaria.atender_mascota("Gingivitis".to_string(), "Medicacion de Gingivitis".to_string(), Fecha::new(15,06,2026));
-        let atencion3:Atencion=veterinaria.atender_mascota("Parasitos".to_string(), "Desparasitario".to_string(), Fecha::new(11,09,2026));
-        veterinaria.registrar_atencion(atencion1);
-        veterinaria.registrar_atencion(atencion2.clone());
-        veterinaria.registrar_atencion(atencion3);
+        let atencion1:Atencion=veterinaria.atender_mascota("Alergia".to_string(), "Medicacion de alergia".to_string(), Fecha::new(03,06,2026)).unwrap();
+        let atencion2:Atencion=veterinaria.atender_mascota("Gingivitis".to_string(), "Medicacion de Gingivitis".to_string(), Fecha::new(15,06,2026)).unwrap();
+        let atencion3:Atencion=veterinaria.atender_mascota("Parasitos".to_string(), "Desparasitario".to_string(), Fecha::new(11,09,2026)).unwrap();
+        veterinaria.registrar_atencion(&atencion1);
+        veterinaria.registrar_atencion(&atencion2);
+        veterinaria.registrar_atencion(&atencion3);
         let atencion_buscar=veterinaria.buscar_atencion("Otto".to_string(), "Juan Perez".to_string(), 44412342);
-        assert!(atencion_buscar.misma_atencion(&atencion2));
+
+        assert!(atencion_buscar.is_some());
+        assert!(atencion_buscar.unwrap().misma_atencion(&atencion2));
     }
 
     #[test]
-    #[should_panic(expected="No se encontró la atención")]
     fn buscar_atencion_mascota_ausente_test(){
         let dueño1:Dueño=Dueño::new("Juan Perez".to_string(), "555 555".to_string(), 44412342);
         let dueño2:Dueño=Dueño::new("Ana".to_string(),"333 333".to_string(),222222222);
@@ -328,61 +339,67 @@ mod test{
         veterinaria.agregar_mascota(cook);
         veterinaria.agregar_mascota(otto);
         veterinaria.agregar_mascota(perli);
-        let atencion1:Atencion=veterinaria.atender_mascota("Alergia".to_string(), "Medicacion de alergia".to_string(), Fecha::new(03,06,2026));
-        let atencion2:Atencion=veterinaria.atender_mascota("Gingivitis".to_string(), "Medicacion de Gingivitis".to_string(), Fecha::new(15,06,2026));
-        let atencion3:Atencion=veterinaria.atender_mascota("Parasitos".to_string(), "Desparasitario".to_string(), Fecha::new(11,09,2026));
+        let atencion1:Atencion=veterinaria.atender_mascota("Alergia".to_string(), "Medicacion de alergia".to_string(), Fecha::new(03,06,2026)).unwrap();
+        let atencion2:Atencion=veterinaria.atender_mascota("Gingivitis".to_string(), "Medicacion de Gingivitis".to_string(), Fecha::new(15,06,2026)).unwrap();
+        let atencion3:Atencion=veterinaria.atender_mascota("Parasitos".to_string(), "Desparasitario".to_string(), Fecha::new(11,09,2026)).unwrap();
        
-        veterinaria.registrar_atencion(atencion1);
-        veterinaria.registrar_atencion(atencion2);
-        veterinaria.registrar_atencion(atencion3);
+        veterinaria.registrar_atencion(&atencion1);
+        veterinaria.registrar_atencion(&atencion2);
+        veterinaria.registrar_atencion(&atencion3);
 
-        veterinaria.buscar_atencion("Garfield".to_string(), "Juan Perez".to_string(), 44412342);
+        assert!(veterinaria.buscar_atencion("Garfield".to_string(), "Juan Perez".to_string(), 44412342).is_none());
     }
 
     #[test]
-    #[should_panic(expected="No se encontró la atención")]
     fn buscar_atencion_sin_atenciones_test(){
         let veterinaria:Veterinaria=Veterinaria::new("Hola Patitas".to_string(),"777 777".to_string(),12345);
-        veterinaria.buscar_atencion("Garfield".to_string(), "Juan Perez".to_string(), 44412342);
+        assert!(veterinaria.buscar_atencion("Garfield".to_string(), "Juan Perez".to_string(), 44412342).is_none());
     }
 
     #[test]
     fn modificar_diagnostico_test(){
         let dueño:Dueño=Dueño::new("Ana".to_string(),"333 333".to_string(),222222222);
         let cook:Mascota=Mascota::new("Cook".to_string(),12,Animal::Perro,dueño);
+        
         let mut veterinaria:Veterinaria=Veterinaria::new("Hola Patitas".to_string(),"777 777".to_string(),12345);
         veterinaria.agregar_mascota(cook);
         
-        let atencion:Atencion=veterinaria.atender_mascota("Alergia".to_string(), "Medicacion de alergia".to_string(), Fecha::new(03,06,2026));
+        let atencion:Atencion=veterinaria.atender_mascota("Alergia".to_string(), "Medicacion de alergia".to_string(), Fecha::new(03,06,2026)).unwrap();
         
-        veterinaria.registrar_atencion(atencion.clone());
+        veterinaria.registrar_atencion(&atencion);
         
 
-        veterinaria.modificar_diagnostico("Sarna".to_string(), atencion.clone());
+        let resultado= veterinaria.modificar_diagnostico("Sarna".to_string(), atencion.clone());
+        assert!(resultado);
         assert_eq!(veterinaria.atenciones[0].diagnostico,"Sarna".to_string());
     }
 
     #[test]
-    #[should_panic]
     fn modificar_diagnostico_atencion_inexistente_test(){
+        let dueño:Dueño=Dueño::new("Ana".to_string(),"333 333".to_string(),222222222);
+        let cook:Mascota=Mascota::new("Cook".to_string(),12,Animal::Perro,dueño);
+        let dueño1:Dueño=Dueño::new("Juan Perez".to_string(), "555 555".to_string(), 44412342);
+        let perli:Mascota=Mascota::new("Perlita".to_string(),10,Animal::Perro,dueño1);
+        let mut veterinaria:Veterinaria=Veterinaria::new("Hola Patitas".to_string(),"777 777".to_string(),12345);
+        veterinaria.agregar_mascota(cook);
+        veterinaria.agregar_mascota(perli);
+        
+        let atencion:Atencion=veterinaria.atender_mascota("Alergia".to_string(), "Medicacion de alergia".to_string(), Fecha::new(03,06,2026)).unwrap();
+        let atencion2:Atencion=veterinaria.atender_mascota("Parasitos".to_string(), "Desparasitario".to_string(), Fecha::new(11,09,2026)).unwrap();
+        veterinaria.registrar_atencion(&atencion);
+
+        assert!(!veterinaria.modificar_diagnostico("Sarna".to_string(), atencion2));
+
+    }
+
+    #[test]
+    fn modificar_diagnostico_sin_atenciones_test(){
         let dueño:Dueño=Dueño::new("Ana".to_string(),"333 333".to_string(),222222222);
         let cook:Mascota=Mascota::new("Cook".to_string(),12,Animal::Perro,dueño);
         let mut veterinaria:Veterinaria=Veterinaria::new("Hola Patitas".to_string(),"777 777".to_string(),12345);
         veterinaria.agregar_mascota(cook);
-        
-        let atencion:Atencion=veterinaria.atender_mascota("Alergia".to_string(), "Medicacion de alergia".to_string(), Fecha::new(03,06,2026));
-        let atencion2:Atencion=veterinaria.atender_mascota("Parasitos".to_string(), "Desparasitario".to_string(), Fecha::new(11,09,2026));
-        veterinaria.registrar_atencion(atencion.clone());
-
-        veterinaria.modificar_diagnostico("Sarna".to_string(), atencion2);
-    }
-
-    #[test]
-    #[should_panic]
-    fn modificar_diagnostico_sin_atenciones_test(){
-        let mut veterinaria:Veterinaria=Veterinaria::new("Hola Patitas".to_string(),"777 777".to_string(),12345);
-        let atencion:Atencion=veterinaria.atender_mascota("Parasitos".to_string(), "Desparasitario".to_string(), Fecha::new(11,09,2026));
-        veterinaria.modificar_diagnostico("Sarna".to_string(), atencion);
+        let atencion:Atencion=veterinaria.atender_mascota("Parasitos".to_string(), "Desparasitario".to_string(), Fecha::new(11,09,2026)).unwrap();
+        assert!(!veterinaria.modificar_diagnostico("Sarna".to_string(), atencion));
     }
 
 
@@ -393,39 +410,46 @@ mod test{
         let mut veterinaria:Veterinaria=Veterinaria::new("Hola Patitas".to_string(),"777 777".to_string(),12345);
         veterinaria.agregar_mascota(cook);
         
-        let atencion:Atencion=veterinaria.atender_mascota("Alergia".to_string(), "Medicacion de alergia".to_string(), Fecha::new(03,06,2026));
+        let atencion:Atencion=veterinaria.atender_mascota("Alergia".to_string(), "Medicacion de alergia".to_string(), Fecha::new(03,06,2026)).unwrap();
         
-        veterinaria.registrar_atencion(atencion.clone());
+        veterinaria.registrar_atencion(&atencion);
         
         let nueva_fecha=Fecha::new(15,06,2026);
-        veterinaria.modificar_visita(nueva_fecha.clone(),atencion.clone());
+        let resultado=veterinaria.modificar_visita(nueva_fecha.clone(),atencion.clone());
+        assert!(resultado);
         assert!(veterinaria.atenciones[0].proxima_visita.misma_fecha(&nueva_fecha));
     }
 
     #[test]
-    #[should_panic]
     fn modificar_visita_atencion_inexistente_test(){
         let dueño:Dueño=Dueño::new("Ana".to_string(),"333 333".to_string(),222222222);
         let cook:Mascota=Mascota::new("Cook".to_string(),12,Animal::Perro,dueño);
+        let dueño1:Dueño=Dueño::new("Juan Perez".to_string(), "555 555".to_string(), 44412342);
+        let perli:Mascota=Mascota::new("Perlita".to_string(),10,Animal::Perro,dueño1);
+
         let mut veterinaria:Veterinaria=Veterinaria::new("Hola Patitas".to_string(),"777 777".to_string(),12345);
         veterinaria.agregar_mascota(cook);
+        veterinaria.agregar_mascota(perli);
         
-        let atencion:Atencion=veterinaria.atender_mascota("Alergia".to_string(), "Medicacion de alergia".to_string(), Fecha::new(03,06,2026));
-        let atencion2:Atencion=veterinaria.atender_mascota("Parasitos".to_string(), "Desparasitario".to_string(), Fecha::new(11,09,2026));
-        veterinaria.registrar_atencion(atencion.clone());
+        let atencion:Atencion=veterinaria.atender_mascota("Alergia".to_string(), "Medicacion de alergia".to_string(), Fecha::new(03,06,2026)).unwrap();
+        let atencion2:Atencion=veterinaria.atender_mascota("Parasitos".to_string(), "Desparasitario".to_string(), Fecha::new(11,09,2026)).unwrap();
+        veterinaria.registrar_atencion(&atencion);
 
         let nueva_fecha=Fecha::new(15,06,2026);
-        veterinaria.modificar_visita(nueva_fecha.clone(),atencion2.clone());
+        assert!(!veterinaria.modificar_visita(nueva_fecha.clone(),atencion2.clone()));
         
     }
 
     #[test]
-    #[should_panic]
     fn modificar_visita_sin_atenciones_test(){
+        let dueño:Dueño=Dueño::new("Ana".to_string(),"333 333".to_string(),222222222);
+        let cook:Mascota=Mascota::new("Cook".to_string(),12,Animal::Perro,dueño);
         let mut veterinaria:Veterinaria=Veterinaria::new("Hola Patitas".to_string(),"777 777".to_string(),12345);
-        let atencion:Atencion=veterinaria.atender_mascota("Parasitos".to_string(), "Desparasitario".to_string(), Fecha::new(11,09,2026));
+        veterinaria.agregar_mascota(cook);
+
+        let atencion:Atencion=veterinaria.atender_mascota("Parasitos".to_string(), "Desparasitario".to_string(), Fecha::new(11,09,2026)).unwrap();
         let fecha=Fecha::new(15,06,2026);
-        veterinaria.modificar_visita(fecha, atencion);
+        assert!(!veterinaria.modificar_visita(fecha, atencion));
     }
 
     #[test]
@@ -439,42 +463,46 @@ mod test{
         veterinaria.agregar_mascota(cook);
         veterinaria.agregar_mascota(otto);
         veterinaria.agregar_mascota(perli);
-        let atencion1:Atencion=veterinaria.atender_mascota("Alergia".to_string(), "Medicacion de alergia".to_string(), Fecha::new(03,06,2026));
-        let atencion2:Atencion=veterinaria.atender_mascota("Gingivitis".to_string(), "Medicacion de Gingivitis".to_string(), Fecha::new(15,06,2026));
-        let atencion3:Atencion=veterinaria.atender_mascota("Parasitos".to_string(), "Desparasitario".to_string(), Fecha::new(11,09,2026));
+        let atencion1:Atencion=veterinaria.atender_mascota("Alergia".to_string(), "Medicacion de alergia".to_string(), Fecha::new(03,06,2026)).unwrap();
+        let atencion2:Atencion=veterinaria.atender_mascota("Gingivitis".to_string(), "Medicacion de Gingivitis".to_string(), Fecha::new(15,06,2026)).unwrap();
+        let atencion3:Atencion=veterinaria.atender_mascota("Parasitos".to_string(), "Desparasitario".to_string(), Fecha::new(11,09,2026)).unwrap();
        
-        veterinaria.registrar_atencion(atencion1.clone());
-        veterinaria.registrar_atencion(atencion2);
-        veterinaria.registrar_atencion(atencion3);
+        veterinaria.registrar_atencion(&atencion1);
+        veterinaria.registrar_atencion(&atencion2);
+        veterinaria.registrar_atencion(&atencion3);
 
         assert_eq!(veterinaria.atenciones.len(),3);
-        veterinaria.eliminar_atencion(atencion1);
+        veterinaria.eliminar_atencion(&atencion1);
         assert_eq!(veterinaria.atenciones.len(),2);    
+        assert!(veterinaria.atenciones[0].misma_atencion(&atencion2));    
     }
 
     #[test]
-    #[should_panic]
     fn eliminar_atencion_inexistente_test(){
         let dueño:Dueño=Dueño::new("Ana".to_string(),"333 333".to_string(),222222222);
         let cook:Mascota=Mascota::new("Cook".to_string(),12,Animal::Perro,dueño);
         let mut veterinaria:Veterinaria=Veterinaria::new("Hola Patitas".to_string(),"777 777".to_string(),12345);
         veterinaria.agregar_mascota(cook);
         
-        let atencion:Atencion=veterinaria.atender_mascota("Alergia".to_string(), "Medicacion de alergia".to_string(), Fecha::new(03,06,2026));
-        let atencion2:Atencion=veterinaria.atender_mascota("Parasitos".to_string(), "Desparasitario".to_string(), Fecha::new(11,09,2026));
-        veterinaria.registrar_atencion(atencion.clone());
+        let atencion:Atencion=veterinaria.atender_mascota("Sarna".to_string(), "Medicacion de alergia".to_string(), Fecha::new(03,06,2026)).unwrap();
+        veterinaria.registrar_atencion(&atencion);
 
-        veterinaria.eliminar_atencion(atencion2);
+        let dueño1:Dueño=Dueño::new("Juan Perez".to_string(), "555 555".to_string(), 44412342);
+        let perli:Mascota=Mascota::new("Perlita".to_string(),10,Animal::Perro,dueño1);
+        let atencion2=Atencion::new(perli, "Alergia".to_string(), "Cremas".to_string(), Fecha::new(15,06,2026));
+
+        assert!(!veterinaria.eliminar_atencion(&atencion2));
     }
 
     #[test]
-    #[should_panic]
     fn eliminar_atencion_sin_atenciones_test(){
         let mut veterinaria:Veterinaria=Veterinaria::new("Hola Patitas".to_string(),"777 777".to_string(),12345);
-        let atencion:Atencion=veterinaria.atender_mascota("Alergia".to_string(), "Medicacion de alergia".to_string(), Fecha::new(03,06,2026));
-        veterinaria.eliminar_atencion(atencion);
+        let dueño1:Dueño=Dueño::new("Juan Perez".to_string(), "555 555".to_string(), 44412342);
+        let perli:Mascota=Mascota::new("Perlita".to_string(),10,Animal::Perro,dueño1);
+        let atencion=Atencion::new(perli, "Alergia".to_string(), "Cremas".to_string(), Fecha::new(15,06,2026));
+        
+        let resultado=veterinaria.eliminar_atencion(&atencion);
+        assert!(!resultado);
     }
-
-
 
 }
