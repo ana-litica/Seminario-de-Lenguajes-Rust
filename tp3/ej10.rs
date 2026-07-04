@@ -218,6 +218,7 @@ impl Biblioteca{
         let mut devuelto=false;
         self.prestamos[posicion].estado="devuelto".to_string();
         self.prestamos[posicion].devolucion=Some(fecha_actual);
+        self.incrementar_disposicion(libro);
         true
     }
 
