@@ -1,9 +1,14 @@
-use crate::tp4::fecha::Fecha;
-use std::collections::HashMap;
+//El coverage del ejercicio original me dio 95.19%
 
+use crate::tp5::fecha::Fecha;
+use std::collections::HashMap;
+use std::fmt::Debug;
+use std::{fs::File, io::Write};
+use serde::Serialize;
+use std::fmt::Display;
 
 #[allow(unused)]
-#[derive(Debug,PartialEq,Clone)]
+#[derive(Debug,PartialEq,Clone,Serialize)]
 struct Usuario{
     nombre:String,
     apellido:String,
@@ -15,7 +20,7 @@ struct Usuario{
 }
 
 #[allow(unused)]
-#[derive(Debug,PartialEq,Clone)]
+#[derive(Debug,PartialEq,Clone,Serialize)]
 struct Criptomoneda{
     nombre:String,
     prefijo:String,
@@ -24,21 +29,21 @@ struct Criptomoneda{
 }
 
 #[allow(unused)]
-#[derive(Debug,PartialEq,Clone)]
+#[derive(Debug,PartialEq,Clone,Serialize)]
 struct Blockchain{
     nombre:String,
     prefijo:String,
 }
 
 #[allow(unused)]
-#[derive(Debug,PartialEq,Clone)]
+#[derive(Debug,PartialEq,Clone,Serialize)]
 enum MedioDeRetiro{
     MercadoPago{cvu:u64,alias:String},
     TransferenciaBancaria {cbu:u64,alias:String},
 }
 
 #[allow(unused)]
-#[derive(Debug,PartialEq,Clone)]
+#[derive(Debug,PartialEq,Clone,Serialize)]
 struct Transaccion{
     fecha:Fecha,
     tipo:TipoTransaccion,
@@ -47,7 +52,7 @@ struct Transaccion{
 }
 
 #[allow(unused)]
-#[derive(Debug,PartialEq,Clone)]
+#[derive(Debug,PartialEq,Clone,Serialize)]
 enum TipoTransaccion{
     IngresoDeFiat,
     CompraDeCripto{criptomoneda:String,cotizacion:f64},
@@ -58,20 +63,42 @@ enum TipoTransaccion{
 }
 
 #[allow(unused)]
-#[derive(Debug,PartialEq,Clone)]
+#[derive(Debug,PartialEq,Clone,Serialize)]
 struct Plataforma{
     usuarios:HashMap<u64,Usuario>,
     transacciones:Vec<Transaccion>,
-    criptomonedas:HashMap<String,Criptomoneda> //clave=prefijo  
+    criptomonedas:HashMap<String,Criptomoneda>, //clave=prefijo  
+    path_archivo:String,
+}
+
+enum Errores{
+    ErrorDeCreacionDeArchivo,
+    ErrorDeEscrituraDeDatos,
+    ErrorDeSerializacionDeDatos,
+}
+
+#[allow(unused)]
+impl Display for Errores{
+    fn fmt(&self,f: &mut std::fmt::Formatter<'_>)-> std::fmt::Result{
+        match self{
+            Errores::ErrorDeCreacionDeArchivo=>write!(f,"No se pudo acceder al archivo"),
+            Errores::ErrorDeEscrituraDeDatos=>write!(f,"No se pudo escribir en el archivo"),
+            Errores::ErrorDeSerializacionDeDatos=>write!(f,"No se pudieron serializar los datos"),
+        }
+    }
 }
 
 #[allow(unused)]
 impl Plataforma{
-    fn new()->Plataforma{
 
+    fn inner_new(path:String)->Plataforma{
         let criptomonedas=Self::cargar_lista_criptos();
 
-        Plataforma { usuarios: HashMap::new(),transacciones: Vec::new(),criptomonedas:criptomonedas}
+        Plataforma { usuarios: HashMap::new(),transacciones: Vec::new(),criptomonedas:criptomonedas, path_archivo:path}
+    }
+
+    pub fn new()->Plataforma{
+        Self::inner_new("src/tp5/archivo_plataform_cripto".to_string())      
     }
 
     fn cargar_lista_criptos()->HashMap<String,Criptomoneda>{
@@ -104,6 +131,13 @@ impl Plataforma{
 
         criptomonedas
     }
+    
+    fn escribir_en_archivo_json(&self)->Result<(),Errores>{
+        let mut archivo=File::create(&self.path_archivo).map_err(|_|Errores::ErrorDeCreacionDeArchivo)?;
+        let datos_serializados=serde_json::to_string(&self).map_err(|_|Errores::ErrorDeSerializacionDeDatos)?;
+        archivo.write_all(datos_serializados.as_bytes()).map_err(|_|Errores::ErrorDeEscrituraDeDatos)?;
+        Ok(())
+    }
 
     fn registrar_usuario(&mut self, usuario:Usuario){
         self.usuarios.insert(usuario.dni,usuario);
@@ -113,14 +147,23 @@ impl Plataforma{
         if monto<=0.0{
             return Err("El monto a ingresar debe ser mayor a 0.0".to_string());
         }
-        if let Some(user)=self.usuarios.get_mut(&dni_usuario){
-            user.sumar_balance_fiat(monto);
-            let dni=user.dni;
-            self.agregar_transaccion(monto, TipoTransaccion::IngresoDeFiat,dni);
-            Ok(())
-        }else{
-            Err("Usuario no encontrado".to_string())
+
+        if self.usuarios.get_mut(&dni_usuario).is_none(){
+            return Err("Usuario no encontrado".to_string());
         }
+
+        let back_up=self.clone();
+        let user=self.usuarios.get_mut(&dni_usuario).unwrap();
+        user.sumar_balance_fiat(monto);
+        let dni=user.dni;
+        self.agregar_transaccion(monto, TipoTransaccion::IngresoDeFiat,dni);
+        if let Err(err)=self.escribir_en_archivo_json(){
+            *self=back_up;
+            return Err(err.to_string());
+        }
+
+        Ok(())
+        
     }
 
     fn agregar_transaccion(&mut self, monto:f64,tipo:TipoTransaccion,dni:u64){
@@ -136,6 +179,7 @@ impl Plataforma{
     }
 
     fn comprar_cripto(&mut self,dni_usuario:u64,monto_fiat:f64,prefijo_cripto:&str)->Result<(),String>{
+        let back_up=self.clone();
         let usuario=match self.usuarios.get_mut(&dni_usuario){
             Some(usuario)=>usuario,
             None=>return Err("Usuario no encontrado".to_string()),
@@ -154,11 +198,16 @@ impl Plataforma{
         *usuario.balance_cripto.entry(prefijo_cripto.to_string()).or_insert(0.0)+=monto_cripto;
         
         self.agregar_transaccion(monto_fiat,TipoTransaccion::CompraDeCripto { criptomoneda: prefijo_cripto.to_string(), cotizacion}, dni_usuario);
-        
+        if let Err(err)=self.escribir_en_archivo_json(){
+            *self=back_up;
+            return Err(err.to_string());
+        }
+
         Ok(())
     }
 
     fn vender_cripto(&mut self, dni_usuario:u64,monto_cripto:f64,prefijo_cripto:&str)->Result<(),String>{
+        let back_up=self.clone();
         let usuario=match self.usuarios.get_mut(&dni_usuario){
             Some(usuario)=>usuario,
             None=>return Err("Usuario no encontrado".to_string()),
@@ -178,10 +227,16 @@ impl Plataforma{
         *cripto-=monto_cripto;
 
         self.agregar_transaccion(monto_cripto,TipoTransaccion::VentaDeCripto { criptomoneda: prefijo_cripto.to_string(), cotizacion }, dni_usuario);
+        if let Err(err)=self.escribir_en_archivo_json(){
+            *self=back_up;
+            return Err(err.to_string());
+        }
+        
         Ok(())
     }
 
     fn retirar_cripto(&mut self, dni_usuario:u64,monto_cripto:f64,prefijo_cripto:&str,nombre_blockchain:&str)->Result<(),String>{
+        let back_up=self.clone();
         let usuario=match self.usuarios.get_mut(&dni_usuario){
             Some(usuario)=>usuario,
             None=>return Err("Usuario no encontrado".to_string()),
@@ -206,10 +261,16 @@ impl Plataforma{
         self.agregar_transaccion(monto_cripto
             , TipoTransaccion::RetiroDeCripto { criptomoneda: prefijo_cripto.to_string(), cotizacion, blockchain, hash }
             , dni_usuario);
+        
+        if let Err(err)=self.escribir_en_archivo_json(){
+            *self=back_up;
+            return Err(err.to_string());
+        }
         Ok(())
     }
 
     fn recibir_cripto(&mut self,dni_usuario:u64,monto_cripto:f64,prefijo_cripto:&str,nombre_blockchain:&str)->Result<(),String>{
+        let back_up=self.clone();
         let usuario=match self.usuarios.get_mut(&dni_usuario){
             Some(usuario)=>usuario,
             None=>return Err("Usuario no encontrado".to_string()),
@@ -225,10 +286,17 @@ impl Plataforma{
 
         *usuario.balance_cripto.entry(prefijo_cripto.to_string()).or_insert(0.0)+=monto_cripto;
         self.agregar_transaccion(monto_cripto,TipoTransaccion::RecepcionDeCripto { cotizacion , blockchain }, dni_usuario);
+
+        if let Err(err)=self.escribir_en_archivo_json(){
+            *self=back_up;
+            return Err(err.to_string());
+        }
+
         Ok(())
     }
 
     fn retirar_fiat(&mut self, dni_usuario:u64,monto_fiat:f64,medio:MedioDeRetiro)->Result<(),String>{
+        let back_up=self.clone();
         let usuario=match self.usuarios.get_mut(&dni_usuario){
             Some(usuario)=>usuario,
             None=>return Err("Usuario no encontrado".to_string()),
@@ -238,6 +306,12 @@ impl Plataforma{
 
         usuario.balance_fiat-=monto_fiat;
         self.agregar_transaccion(monto_fiat,TipoTransaccion::RetiroFiat { medio }, dni_usuario);
+
+        if let Err(err)=self.escribir_en_archivo_json(){
+            *self=back_up;
+            return Err(err.to_string());
+        }
+
         Ok(())
     }
 
@@ -408,7 +482,8 @@ impl Transaccion{
 
 #[cfg(test)]
 mod test{
-    use crate::{tp4::fecha::Fecha, tp4::ej5::{Blockchain, Criptomoneda, MedioDeRetiro, Plataforma, TipoTransaccion, Transaccion, Usuario}};
+    use crate::{tp5::fecha::Fecha, tp5::ej6::{Blockchain, Criptomoneda, MedioDeRetiro, Plataforma, TipoTransaccion, Transaccion, Usuario}};
+    use std::fs;
 
     #[test]
     fn ingresar_dinero_test(){
@@ -1065,6 +1140,127 @@ mod test{
 
         let resultado=plataforma.cripto_mas_comprada();
         assert_eq!(resultado,Err("No se realizaron transacciones".to_string()));
+    }
+
+    #[test]
+    fn ingresar_dinero_fallido_por_falla_en_creacion_de_archivo_test(){
+        let path="src/tp5/testeo_de_errores_ingresar_dinero";
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_dir(path);
+        //El archivo existe pero es un directorio, no se pueden escribir datos en él
+
+        fs::create_dir(path).unwrap();
+        let mut plataforma=Plataforma::inner_new(path.to_string());
+        let usuario=Usuario::new("Juan".to_string(), "Perez".to_string(), "jp@gmail.com".to_string(), 2222222, true);
+        let dni_usuario=usuario.dni;
+        plataforma.registrar_usuario(usuario);
+        
+        assert!(plataforma.transacciones.len()==0);
+        let resultado=plataforma.ingresar_dinero(dni_usuario,500.0);
+        assert_eq!(resultado,Err("No se pudo acceder al archivo".to_string()));
+        assert!(plataforma.transacciones.len()==0);
+
+
+        let _=std::fs::remove_dir(path);
+    }
+
+    #[test]
+    fn comprar_cripto_fallido_por_falla_en_creacion_de_archivo_test(){
+        let path="src/tp5/testeo_de_errores_comprar_cripto";
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_dir(path);
+        //El archivo existe pero es un directorio, no se pueden escribir datos en él
+
+        fs::create_dir(path).unwrap();
+        let mut plataforma=Plataforma::inner_new(path.to_string());
+        let mut usuario=Usuario::new("Juan".to_string(), "Perez".to_string(), "jp@gmail.com".to_string(), 2222222, true);
+        let dni_usuario=usuario.dni;
+        //sumo para que no falle en operaciones previas
+        usuario.balance_fiat+=5000.0;
+        plataforma.registrar_usuario(usuario.clone());
+        let resultado=plataforma.comprar_cripto(dni_usuario, 350.0, "ETH");
+        
+        assert!(plataforma.transacciones.len()==0);
+        assert_eq!(resultado,Err("No se pudo acceder al archivo".to_string()));
+        assert!(plataforma.transacciones.len()==0);
+
+        let _=std::fs::remove_dir(path);
+    }
+
+    #[test]
+    fn vender_cripto_fallido_por_falla_en_creacion_de_archivo_test(){
+        let path="src/tp5/testeo_de_errores_vender_cripto";
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_dir(path);
+        //El archivo existe pero es un directorio, no se pueden escribir datos en él
+
+        fs::create_dir(path).unwrap();
+        let mut plataforma=Plataforma::inner_new(path.to_string());
+        let mut usuario=Usuario::new("Juan".to_string(), "Perez".to_string(), "jp@gmail.com".to_string(), 2222222, true);
+        let dni_usuario=usuario.dni;
+        //inserto para que no falle en operaciones previas
+        usuario.balance_cripto.insert("ETH".to_string(), 2.0);
+        plataforma.registrar_usuario(usuario.clone());
+        let resultado=plataforma.vender_cripto(dni_usuario, 0.05,"ETH");
+        
+        assert!(plataforma.transacciones.len()==0);
+        assert_eq!(resultado,Err("No se pudo acceder al archivo".to_string()));
+        assert!(plataforma.transacciones.len()==0);
+
+        let _=std::fs::remove_dir(path);
+    }
+
+    #[test]
+    fn retirar_cripto_fallido_por_falla_en_creacion_de_archivo_test(){
+        let path="src/tp5/testeo_de_errores_retirar_cripto";
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_dir(path);
+        //El archivo existe pero es un directorio, no se pueden escribir datos en él
+
+        fs::create_dir(path).unwrap();
+
+        let mut plataforma=Plataforma::inner_new(path.to_string());
+
+        let mut usuario=Usuario::new("Juan".to_string(), "Perez".to_string(), "jp@gmail.com".to_string(), 2222222, true);
+        let dni_usuario=usuario.dni;
+
+        //inserto para que no falle en operaciones previas
+        usuario.balance_cripto.insert("ETH".to_string(), 2.0);
+        plataforma.registrar_usuario(usuario);
+        
+        let resultado=plataforma.retirar_cripto(dni_usuario, 0.04, "ETH", "EthereumNetwork");
+
+        assert!(plataforma.transacciones.len()==0);
+        assert_eq!(resultado,Err("No se pudo acceder al archivo".to_string()));
+        assert!(plataforma.transacciones.len()==0);
+
+        let _=std::fs::remove_dir(path);
+    }
+
+    #[test]
+    fn retirar_fiat_fallido_por_falla_en_creacion_de_archivo_test(){
+        let path="src/tp5/testeo_de_errores_retirar_fiat";
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_dir(path);
+        //El archivo existe pero es un directorio, no se pueden escribir datos en él
+
+        fs::create_dir(path).unwrap();
+
+        let mut plataforma=Plataforma::inner_new(path.to_string());
+
+        let mut usuario=Usuario::new("Juan".to_string(), "Perez".to_string(), "jp@gmail.com".to_string(), 2222222, true);
+        let dni_usuario=usuario.dni;
+        usuario.balance_fiat+=1000.0;
+        plataforma.registrar_usuario(usuario);
+        
+        let resultado=plataforma.retirar_fiat(dni_usuario, 200.0,
+            MedioDeRetiro::TransferenciaBancaria { cbu: 123456, alias: "juan.mp".to_string()});
+
+        assert!(plataforma.transacciones.len()==0);
+        assert_eq!(resultado,Err("No se pudo acceder al archivo".to_string()));
+        assert!(plataforma.transacciones.len()==0);
+
+        let _=std::fs::remove_dir(path);
     }
 
 }

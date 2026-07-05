@@ -1,6 +1,8 @@
+use serde::{Serialize,Deserialize};
 use chrono::Datelike;
+//Misma fecha que la del ejercicio 3 del tp3 pero con una funcion y traits más
 
-#[derive(Debug,Clone,PartialEq)]
+#[derive(Debug,Clone,PartialEq,Serialize,Deserialize)]
 pub struct Fecha{
     pub dia:u32,
     pub mes:u32,
@@ -92,11 +94,11 @@ impl Fecha{
         self.dia==fecha.dia && self.mes==fecha.mes && self.año==fecha.año
     }
 
-    //funcion para facilitar otros ejercicios
     pub fn fecha_actual() -> Fecha {
         let hoy = chrono::Local::now();
         Fecha { dia: hoy.day() as u32, mes: hoy.month() as u32, año: hoy.year() as u32 }
     }
+
 }
 
 #[cfg(test)]

@@ -1,8 +1,14 @@
+//El coverage del ejercicio original es de 91.13%
+
 use std::collections::HashMap;
-use crate::tp3::ej3::Fecha;
+use crate::tp5::fecha::Fecha;
+use std::fmt::Debug;
+use std::{fs::File, io::Write};
+use serde::Serialize;
+use std::fmt::Display;
 
 #[allow(unused)]
-#[derive(Debug,PartialEq,Clone,Eq,Hash)]
+#[derive(Debug,PartialEq,Clone,Eq,Hash,Serialize)]
 enum TipoSuscripcion{
     Basic ,
     Classic,
@@ -10,14 +16,14 @@ enum TipoSuscripcion{
 }
 
 #[allow(unused)]
-#[derive(Debug,PartialEq,Clone)]
+#[derive(Debug,PartialEq,Clone,Serialize)]
 enum EstadoSuscripcion{
     Activa,
     Inactiva,
 }
 
 #[allow(unused)]
-#[derive(Debug,PartialEq,Clone,Eq,Hash)]
+#[derive(Debug,PartialEq,Clone,Eq,Hash,Serialize)]
 enum MedioDePago{
     Efectivo,
     MercadoPago{cvu:u32, alias:String, correo:String},
@@ -27,7 +33,7 @@ enum MedioDePago{
 }
 
 #[allow(unused)]
-#[derive(Debug,PartialEq,Clone)]
+#[derive(Debug,PartialEq,Clone,Serialize)]
 struct Suscripcion{
     tipo:TipoSuscripcion,
     fecha_inicio:Fecha,
@@ -36,15 +42,34 @@ struct Suscripcion{
 }
 
 #[allow(unused)]
-#[derive(Debug,PartialEq,Clone)]
+#[derive(Debug,PartialEq,Clone,Serialize)]
 pub struct Usuario{
     nombre:String,
     suscripciones:Vec<Suscripcion>,
 }
 
 #[allow(unused)]
+#[derive(Serialize)]
 struct Plataforma{
     usuarios:Vec<Usuario>,
+    path_archivo:String,
+}
+
+enum Errores{
+    ErrorDeCreacionDeArchivo,
+    ErrorDeEscrituraDeDatos,
+    ErrorDeSerializacionDeDatos,
+}
+
+#[allow(unused)]
+impl Display for Errores{
+    fn fmt(&self,f: &mut std::fmt::Formatter<'_>)-> std::fmt::Result{
+        match self{
+            Errores::ErrorDeCreacionDeArchivo=>write!(f,"No se pudo acceder al archivo"),
+            Errores::ErrorDeEscrituraDeDatos=>write!(f,"No se pudo escribir en el archivo"),
+            Errores::ErrorDeSerializacionDeDatos=>write!(f,"No se pudieron serializar los datos"),
+        }
+    }
 }
 
 #[allow(unused)]
@@ -180,7 +205,11 @@ impl Usuario{
 impl Plataforma{
 
     pub fn new()->Plataforma{
-        Plataforma { usuarios:Vec::new() }
+        Self::inner_new("src/tp5/archivos_suscripciones".to_string())
+    }
+
+    fn inner_new(path:String)->Plataforma{
+        Plataforma { usuarios:Vec::new(), path_archivo:path}
     }
 
     fn usuario_existente(&mut self,nombre:String)->Option<&mut Usuario> {
@@ -201,6 +230,13 @@ impl Plataforma{
         }
     }
 
+    fn escribir_en_archivo_json(&self)->Result<(),Errores>{
+        let mut archivo=File::create(&self.path_archivo).map_err(|_|Errores::ErrorDeCreacionDeArchivo)?;
+        let datos_serializados=serde_json::to_string(&self.usuarios).map_err(|_|Errores::ErrorDeSerializacionDeDatos)?;
+        archivo.write_all(datos_serializados.as_bytes()).map_err(|_|Errores::ErrorDeEscrituraDeDatos)?;
+        Ok(())
+    }
+
     pub fn crear_usuario(&mut self,nombre:String, tipo_suscripcion:TipoSuscripcion,pago:MedioDePago,fecha:Fecha)->Result<Usuario,String>{
         if self.usuario_existente(nombre.clone()).is_none(){
             let suscripcion=Suscripcion::new(tipo_suscripcion,pago,fecha);
@@ -208,6 +244,10 @@ impl Plataforma{
 
             usuario.agregar_suscripcion(suscripcion.clone());
             self.usuarios.push(usuario.clone());
+            if let Err(err)=self.escribir_en_archivo_json(){
+                self.usuarios.pop();
+                return Err(err.to_string());
+            }
             return Ok(usuario);
         }
         Err("Ya existe otro usuario con el nombre ingresado".to_string())
@@ -218,32 +258,45 @@ impl Plataforma{
     }
 
     pub fn upgrade(&mut self,nombre:String)->Result<(),String>{
-        let usuario=self.usuario_existente(nombre);
-        if usuario.is_some(){
-            usuario.unwrap().upgrade_suscripcion();
-            Ok(())
-        }else{
-            Err("El usuario no existe".to_string())
+        if self.usuario_existente(nombre.clone()).is_none(){
+            return Err("El usuario no existe".to_string());
         }
+        let back_up=self.usuarios.clone();
+        let usuario=self.usuario_existente(nombre).unwrap();
+        usuario.upgrade_suscripcion();
+        if let Err(err)=self.escribir_en_archivo_json(){
+            self.usuarios=back_up;
+            return Err(err.to_string());
+        }
+       Ok(())    
     }
 
     pub fn downgrade(&mut self, nombre:String)->Result<(),String>{
-        if let Some(usuario)=self.usuarios.iter_mut().find(|user|nombre==user.nombre){
-            usuario.downgrade_suscripcion();
-            Ok(())
-        }else{
-            Err("El usuario no existe".to_string())
+        if self.usuario_existente(nombre.clone()).is_none(){
+            return Err("El usuario no existe".to_string());
         }
+        let back_up=self.usuarios.clone();
+        let usuario=self.usuario_existente(nombre).unwrap();
+        usuario.downgrade_suscripcion();
+        if let Err(err)=self.escribir_en_archivo_json(){
+            self.usuarios=back_up;
+            return Err(err.to_string());
+        }
+       Ok(())    
     }
 
     pub fn cancelar_suscripcion(&mut self,nombre_usuario:String)->Result<(),String>{
-        let user=self.usuario_existente(nombre_usuario);
-        if user.is_some(){
-            user.unwrap().get_suscripcion_activa()?.cambiar_estado();
-            Ok(())
-        }else{
-            Err("El usuario no existe".to_string())
+        if self.usuario_existente(nombre_usuario.clone()).is_none(){
+            return Err("El usuario no existe".to_string());
         }
+        let back_up=self.usuarios.clone();
+        let user=self.usuario_existente(nombre_usuario).unwrap();
+        user.get_suscripcion_activa()?.cambiar_estado();
+        if let Err(err)=self.escribir_en_archivo_json(){
+            self.usuarios=back_up;
+            return Err(err.to_string());
+        }
+        Ok(())
     }
 
     fn pago_mas_popular_suscripciones_activas(&self)-> Result<String,String>{
@@ -307,8 +360,9 @@ impl Plataforma{
 
 #[cfg(test)]
 mod test{
-    use crate::tp4::ej3::{EstadoSuscripcion, MedioDePago, Plataforma, Suscripcion, TipoSuscripcion, Usuario};
-    use crate::tp4::ej3::Fecha;
+    use crate::tp5::ej5::{EstadoSuscripcion, MedioDePago, Plataforma, Suscripcion, TipoSuscripcion, Usuario};
+    use crate::tp5::fecha::Fecha;
+    use std::fs;
 
     //test crear el usuario
     #[test]
@@ -778,7 +832,7 @@ mod test{
     //test suscripción más contratada.
     #[test]
     fn tipo_de_suscripcion_mas_contratada_test(){
-          let mut streaming=Plataforma::new();
+        let mut streaming=Plataforma::new();
         let usuario1=streaming.crear_usuario("Ana".to_string(),
                         TipoSuscripcion::Basic, 
                         MedioDePago::TransferenciaBancaria { cbu: 2222222, alias: "ana.p.alfaro".to_string(), banco: "Banco Provincia de Santa Cruz".to_string(), titular: "Alfaro Ana".to_string() }
@@ -808,4 +862,116 @@ mod test{
         assert_eq!(resultado,Err("No hay suscripciones registradas"));
     }
 
+    #[test]
+    fn crear_usuario_fallido_por_creacion_de_archivo_fallida_test(){
+        let path="src/tp5/testeo_de_errores_crear_usuario";
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_dir(path);
+        //El archivo existe pero es un directorio, no se pueden escribir datos en él
+
+        fs::create_dir(path).unwrap();
+
+        let mut plataforma=Plataforma::inner_new(path.to_string());
+
+        assert!(plataforma.usuarios.len()==0);
+        let usuario_nuevo=plataforma.crear_usuario("Anaaaa".to_string(),
+        TipoSuscripcion::Classic, 
+        MedioDePago::TransferenciaBancaria { cbu: 2222222, alias: "ana.p.alfaro".to_string(), banco: "Banco Provincia de Santa Cruz".to_string(), titular: "Alfaro Ana".to_string() }
+        ,Fecha::new(18,06,2026));
+        
+        assert_eq!(usuario_nuevo,Err("No se pudo acceder al archivo".to_string()));
+        assert!(plataforma.usuarios.len()==0);
+
+        let _=std::fs::remove_dir(path);
+    }
+
+    #[test]
+    fn upgrade_fallido_por_creacion_de_archivo_fallida_test(){
+        let path="src/tp5/testeo_de_errores_upgrade_suscripcion";
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_dir(path);
+        //El archivo existe pero es un directorio, no se pueden escribir datos en él
+
+        fs::create_dir(path).unwrap();
+
+        let mut plataforma=Plataforma::inner_new(path.to_string());
+        let mut usuario=Usuario::new("Ana".to_string());
+        //pusheo para que el devuelva el error en upgrade y no en crear_usuario
+        
+        let susc=Suscripcion::new(TipoSuscripcion::Basic, 
+            MedioDePago::TransferenciaBancaria { cbu: 2222222, alias: "ana.p.alfaro".to_string(), banco: "Banco Provincia de Santa Cruz".to_string(), titular: "Alfaro Ana".to_string() }
+            ,Fecha::new(18,06,2026));
+            
+        usuario.suscripciones.push(susc.clone());
+        plataforma.usuarios.push(usuario);
+            
+        let mut user=plataforma.get_usuario("Ana".to_string()).unwrap();
+        assert!(user.get_suscripcion_activa().unwrap().tipo==TipoSuscripcion::Basic);
+        let resultado=plataforma.upgrade("Ana".to_string());
+        assert_eq!(resultado,Err("No se pudo acceder al archivo".to_string()));
+        let mut usuario=plataforma.get_usuario("Ana".to_string()).unwrap();
+        assert!(usuario.get_suscripcion_activa().unwrap().tipo==TipoSuscripcion::Basic);
+        
+    
+        let _=std::fs::remove_dir(path);
+    }
+
+    #[test]
+    fn downgrade_fallido_por_creacion_de_archivo_fallida_test(){
+        let path="src/tp5/testeo_de_errores_downgrade_suscripcion";
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_dir(path);
+        //El archivo existe pero es un directorio, no se pueden escribir datos en él
+
+        fs::create_dir(path).unwrap();
+
+        let mut plataforma=Plataforma::inner_new(path.to_string());
+        let mut usuario=Usuario::new("Ana".to_string());
+        //pusheo para que el devuelva el error en upgrade y no en crear_usuario
+        
+        let susc=Suscripcion::new(TipoSuscripcion::Basic, 
+            MedioDePago::TransferenciaBancaria { cbu: 2222222, alias: "ana.p.alfaro".to_string(), banco: "Banco Provincia de Santa Cruz".to_string(), titular: "Alfaro Ana".to_string() }
+            ,Fecha::new(18,06,2026));
+            
+        usuario.suscripciones.push(susc.clone());
+        plataforma.usuarios.push(usuario);
+            
+        let mut user=plataforma.get_usuario("Ana".to_string()).unwrap();
+        assert!(user.get_suscripcion_activa().unwrap().tipo==TipoSuscripcion::Basic);
+        let resultado=plataforma.downgrade("Ana".to_string());
+        assert_eq!(resultado,Err("No se pudo acceder al archivo".to_string()));
+
+        let mut usuario=plataforma.get_usuario("Ana".to_string()).unwrap();
+        assert!(usuario.get_suscripcion_activa().unwrap().tipo==TipoSuscripcion::Basic);    
+    
+        let _=std::fs::remove_dir(path);
+    }
+
+    #[test]
+    fn cancelar_suscripcion_fallido_por_creacion_de_archivo_fallida_test(){
+        let path="src/tp5/testeo_de_errores_cancelar_suscripcion";
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_dir(path);
+        //El archivo existe pero es un directorio, no se pueden escribir datos en él
+
+        fs::create_dir(path).unwrap();
+
+        let mut plataforma=Plataforma::inner_new(path.to_string());
+        let mut usuario=Usuario::new("Ana".to_string());
+        //pusheo para que el devuelva el error en upgrade y no en crear_usuario
+        
+        let susc=Suscripcion::new(TipoSuscripcion::Basic, 
+            MedioDePago::TransferenciaBancaria { cbu: 2222222, alias: "ana.p.alfaro".to_string(), banco: "Banco Provincia de Santa Cruz".to_string(), titular: "Alfaro Ana".to_string() }
+            ,Fecha::new(18,06,2026));
+            
+        usuario.suscripciones.push(susc.clone());
+        plataforma.usuarios.push(usuario);
+            
+        let resultado=plataforma.cancelar_suscripcion("Ana".to_string());
+        assert_eq!(resultado,Err("No se pudo acceder al archivo".to_string()));
+    
+        let _=std::fs::remove_dir(path);
+    }
+
+    
 }

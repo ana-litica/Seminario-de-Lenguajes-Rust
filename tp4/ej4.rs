@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::tp3::ej3::Fecha;
+use crate::tp4::fecha::Fecha;
 
 #[allow(unused)]
 #[derive(Debug,PartialEq,Clone,Copy)]
@@ -260,7 +260,8 @@ impl<'a> Sistema<'a>{
 
 #[cfg(test)]
 mod test{
-    use crate::tp4::ej4::{Fecha,Cliente, Detalle, MedioDePago, Producto,DatoDeCategoria,DatoDeVendedor, Sistema, Vendedor, Venta};
+    use crate::tp4::ej4::{Cliente, Detalle, MedioDePago, Producto,DatoDeCategoria,DatoDeVendedor, Sistema, Vendedor, Venta};
+    use crate::tp4::fecha::Fecha;
 
     #[test]
     fn vender_test(){
