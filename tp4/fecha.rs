@@ -1,4 +1,5 @@
 use chrono::Datelike;
+//es la misma fecha que la de la practica 3 pero le agregué una funcion para facilitar otros ejercicios
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct Fecha{
