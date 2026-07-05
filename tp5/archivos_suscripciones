@@ -1,0 +1,1 @@
+[{"nombre":"Ana","suscripciones":[{"tipo":"Super","fecha_inicio":{"dia":18,"mes":6,"año":2026},"pago":{"TransferenciaBancaria":{"cbu":2222222,"alias":"ana.p.alfaro","banco":"Banco Provincia de Santa Cruz","titular":"Alfaro Ana"}},"estado":"Activa"}]}]

@@ -1,0 +1,1 @@
+[{"paciente":{"nombre":"Perlita","edad":10,"tipo_animal":"Perro","dueño":{"nombre":"Juan Perez","direccion":"555 555","telefono":44412342}},"diagnostico":"Alergia","tratamiento":"Medicacion de alergia","proxima_visita":{"dia":3,"mes":6,"año":2026}}]
